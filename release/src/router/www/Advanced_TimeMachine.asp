@@ -25,8 +25,6 @@
 
 <% login_state_hook(); %>
 var $j = jQuery.noConflict();
-var usb_path1_index = '<% nvram_get("usb_path1"); %>';
-var usb_path2_index = '<% nvram_get("usb_path2"); %>';
 var all_disks = "";
 var all_disk_interface;
 if(usb_support != -1){
@@ -42,7 +40,7 @@ function initial(){
 	if('<% nvram_get("tm_device_name"); %>' != '')
 		$("tmPath").innerHTML = '/mnt/<% nvram_get("tm_device_name"); %>';
 	else
-		$("tmPath").innerHTML = '<div style="margin-left:5px;color:#FC0">Change the Backup Path button to \"Select\" and the text \"Select the USB storage device that you want to access.\"</div>';
+		$("tmPath").innerHTML = '<div style="margin-left:5px;color:#FC0"><#DM_Install_partition#></div>';
 	
 	if(document.form.timemachine_enable.value == "0"){
 		$("backupPath_tr").style.display = "none";
@@ -121,7 +119,6 @@ var availSpace;
 function setPart(_part, _avail, _total){
 	$("tmPath").innerHTML = "/mnt/" + _part;
 	document.form.tm_device_name.value = _part;
-	get_USBInfo(all_foreign_disk_interface_names()[pool_names().getIndexByValue(_part)]);
 	cancel_folderTree();
 	totalSpace = _total;
 	availSpace = _avail;
@@ -176,24 +173,11 @@ function all_foreign_disk_interface_names(){
 	var _foreign_disk_interface_names = new Array();
 	for(var i=0; i<foreign_disk_interface_names().length; i++){
 		for(var k=0; k<foreign_disk_total_mounted_number()[i]; k++){
-			_foreign_disk_interface_names.push(foreign_disk_interface_names()[i]);
+			_foreign_disk_interface_names.push(foreign_disk_interface_names()[i].charAt(0));
 		}
 	}
 	return _foreign_disk_interface_names;
 }
-
-function get_USBInfo(_path){
-	if(_path == "1"){
-			document.form.tm_usb_path_vid.value = "<% nvram_get("usb_path1_vid"); %>";
-			document.form.tm_usb_path_pid.value = "<% nvram_get("usb_path1_pid"); %>";
-			document.form.tm_usb_path_serial.value = "<% nvram_get("usb_path1_serial"); %>";
-	}
-	else{
-			document.form.tm_usb_path_vid.value = "<% nvram_get("usb_path2_vid"); %>";
-			document.form.tm_usb_path_pid.value = "<% nvram_get("usb_path2_pid"); %>";
-			document.form.tm_usb_path_serial.value = "<% nvram_get("usb_path2_serial"); %>";
-	}
-}	
 
 function cal_panel_block(obj_id){
 	var blockmarginLeft;
@@ -226,7 +210,7 @@ function cal_panel_block(obj_id){
 	<table>
 		<tr>
 			<td>
-				<div style="width:450px;font-family:Arial;font-size:13px;font-weight:bolder; margin-top:23px;margin-left:30px;">Select a target disk:</div>
+				<div style="width:450px;font-family:Arial;font-size:13px;font-weight:bolder; margin-top:23px;margin-left:30px;"><#DM_Install_partition#> :</div>
 			</td>
 		</tr>
 	</table>
@@ -262,15 +246,11 @@ function cal_panel_block(obj_id){
 <input type="hidden" name="productid" value="<% nvram_get("productid"); %>">
 <input type="hidden" name="current_page" value="Advanced_TimeMachine.asp">
 <input type="hidden" name="next_page" value="Advanced_TimeMachine.asp">
-<input type="hidden" name="next_host" value="">
 <input type="hidden" name="modified" value="0">
 <input type="hidden" name="action_mode" value="apply">
 <input type="hidden" name="action_script" value="restart_timemachine">
 <input type="hidden" name="action_wait" value="5">
 <input type="hidden" name="preferred_lang" id="preferred_lang" value="<% nvram_get("preferred_lang"); %>">
-<input type="hidden" name="tm_usb_path_vid" id="usb_path_vid" value="">
-<input type="hidden" name="tm_usb_path_pid" id="tm_usb_path_pid" value="">
-<input type="hidden" name="tm_usb_path_serial" id="tm_usb_path_serial" value="">
 <input type="hidden" name="tm_ui_setting" value="">
 <input type="hidden" name="firmver" value="<% nvram_get("firmver"); %>">
 <input type="hidden" name="timemachine_enable" value="<% nvram_get("timemachine_enable"); %>">
@@ -320,9 +300,9 @@ function cal_panel_block(obj_id){
 								1. Enable Time machine.<br>
 								2. Select a target disk partition. <br>
 								3. Set usage limitation if you want and click [Apply]. <br>
-								4. Start to backup (<a href="http://support.apple.com/kb/HT1427" target="_blank" style="text-decoration:underline;">How to use APPLE Time Machine?</a>).<br>
+								4. Start to backup (<a href="http://www.asus.com/support/Knowledge-Detail/11/2/RTAC68U/3FEED048-5AC2-4B97-ABAE-DE609DDBC151/" target="_blank" style="text-decoration:underline;">How to use APPLE Time Machine?</a>).<br>
 								5. <a href="https://www.youtube.com/watch?v=Bc3oYW1cmcQ" target="_blank" style="text-decoration:underline;">Time Machine tutorial</a>.<br>
-								6. <a href="http://support.asus.com/Search.aspx?SLanguage=en&keyword=Time%20Machine" target="_blank" style="text-decoration:underline;">Time Machine FAQ</a>.<br>
+								6. <a href="http://www.asus.com/support/Knowledge-Detail/11/2/RTAC68U/25DFAE22-873C-4796-91C4-5CF1F08A2064/" target="_blank" style="text-decoration:underline;">Time Machine FAQ</a>.<br>
 								<span style="color:#FC0">
 									* We recommend you use an Ethernet connection for the initial backup. <br>
 									* Initial backup may take a while depending on the size of your OSX volume. Consider starting the first backup in
@@ -371,14 +351,14 @@ function cal_panel_block(obj_id){
 					<tr id="backupPath_tr">
 						<th>Backup Path</a></th>
 						<td>
-							<input class="button_gen" onclick="selPartition()" type="button" value="<#Select_menu_default#>"/>
+							<input class="button_gen" onclick="selPartition()" type="button" value="<#Select_btn#>"/>
 							<span id="tmPath" style="font-family: Lucida Console;"></span>
 		   			</td>
 					</tr>
 					<tr id="volSize_tr">
 						<th>TimeMachine Volume Size</a></th>
 						<td>
-							<input id="tm_vol_size" name="tm_vol_size" maxlength="3" class="input_6_table" type="text" maxLength="8" value="<% nvram_get("tm_vol_size"); %>"/> GB (0: Unlimited)
+							<input id="tm_vol_size" name="tm_vol_size" maxlength="3" class="input_6_table" type="text" maxLength="8" value="<% nvram_get("tm_vol_size"); %>"/> GB (0: <#Limitless#>)
 							&nbsp;<span id="maxVolSize"></span>
 						</td>
 					</tr>

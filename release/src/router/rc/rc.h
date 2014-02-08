@@ -17,6 +17,7 @@
 
 #define _GNU_SOURCE
 
+#include <rtconfig.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -74,6 +75,13 @@ extern int g_reboot;
 
 #ifdef RTCONFIG_BCMARM
 #define LINUX_KERNEL_VERSION LINUX_VERSION_CODE
+
+static inline int before(int ver1, int ver2)
+{
+	return (ver1-ver2) < 0;
+}
+
+#define After(ver2, ver1)	before(ver1, ver2)
 #endif
 
 #if defined(LINUX30) || LINUX_VERSION_CODE > KERNEL_VERSION(2,6,34)
@@ -92,7 +100,10 @@ extern int g_reboot;
 
 #define NAT_RULES	"/tmp/nat_rules"
 
+#ifndef ARRAY_SIZE
 #define ARRAY_SIZE(ary) (sizeof(ary) / sizeof((ary)[0]))
+#endif
+
 #define XSTR(s) STR(s)
 #define STR(s) #s
 
@@ -256,13 +267,12 @@ extern int asuscfe(const char *PwqV, const char *IF);
 extern int stainfo(int band);
 extern int Set_SwitchPort_LEDs(const char *group, const char *action);
 extern int ralink_mssid_mac_validate(const char *macaddr);
-extern char * get_wpsifname(void);
 extern int getWscStatus(int unit);
 extern int wl_WscConfigured(int unit);
 extern int Get_Device_Flags(void);
 extern int Set_Device_Flags(const char *flags_str);
-extern char *get_wifname(int band);
-extern char *get_wpsifname(void);
+extern const char *get_wifname(int band);
+extern const char *get_wpsifname(void);
 #endif
 
 /* sysdeps/dsl-*.c */
@@ -468,7 +478,6 @@ extern int mtd_erase_old(const char *mtdname);
 extern int mtd_write_main_old(int argc, char *argv[]);
 extern int mtd_unlock_erase_main_old(int argc, char *argv[]);
 extern int mtd_write(const char *path, const char *mtd);
-extern int wlaide_main(int argc, char *argv[]);
 #else
 extern int mtd_write_main(int argc, char *argv[]);
 extern int mtd_unlock_erase_main(int argc, char *argv[]);
@@ -518,7 +527,7 @@ extern int stop_ots(void);
 extern int start_ots(void);
 
 // common.c
-extern in_addr_t inet_addr_(const char *cp);    // oleg patch
+extern in_addr_t inet_addr_(const char *cp);	// oleg patch
 extern void usage_exit(const char *cmd, const char *help) __attribute__ ((noreturn));
 #define modprobe(mod, args...) ({ char *argv[] = { "modprobe", "-s", mod, ## args, NULL }; _eval(argv, NULL, 0, NULL); })
 extern int modprobe_r(const char *mod);
@@ -703,13 +712,16 @@ extern int is_create_file_dongle(const char *vid, const char *pid);
 #endif
 extern int is_android_phone(const int mode, const char *vid, const char *pid);
 extern int write_3g_conf(FILE *fp, int dno, int aut, char *vid, char *pid);
-extern int init_3g_param(char *vid, char *pid, int port_num);
+extern int init_3g_param(char *vid, char *pid, const char *port_path);
 
 //services.c
 extern void setup_leds();
 extern void write_static_leases(char *file);
 #ifdef RTCONFIG_YANDEXDNS
 extern const char *yandex_dns(int mode);
+#endif
+#ifdef RTCONFIG_DNSFILTER
+extern const char *dns_filter(int mode);
 #endif
 #ifdef RTCONFIG_DNSMASQ
 extern void restart_dnsmasq(int force);
@@ -723,6 +735,8 @@ extern void start_ipv6_tunnel(void);
 extern void stop_ipv6_tunnel(void);
 extern void start_radvd(void);
 extern void stop_radvd(void);
+extern void start_rdnssd(void);
+extern void stop_rdnssd(void);
 extern void start_dhcp6s(void);
 extern void stop_dhcp6s(void);
 extern void start_ipv6(void);
@@ -751,10 +765,33 @@ extern int start_avahi_daemon(void);
 extern void stop_avahi_daemon(void);
 #endif
 
-#ifdef RTCONFIG_MDNS
+#if defined(RTCONFIG_MDNS)
 extern int start_mdns(void);
 extern void stop_mdns(void);
 #endif
+
+#ifdef RTCONFIG_MEDIA_SERVER
+void force_stop_dms(void);
+void stop_mt_daapd(void);
+void start_dms(void);
+void start_mt_daapd(void);
+void set_invoke_later(int flag);
+int get_invoke_later(void);
+#endif	/* RTCONFIG_MEDIA_SERVER */
+
+#ifdef RTCONFIG_WIRELESSREPEATER
+void start_wlcscan(void);
+void stop_wlcscan(void);
+void start_wlcconnect(void);
+void stop_wlcconnect(void);
+void repeater_pap_disable(void);
+void repeater_nat_setting(void);
+#if defined(RTCONFIG_RALINK)
+void apcli_start(void);
+int site_survey_for_channel(int n, const char *wif, int *HT_EXT);
+#endif
+#endif	/* RTCONFIG_WIRELESSREPEATER */
+
 
 #ifdef BTN_SETUP
 enum BTNSETUP_STATE
@@ -821,6 +858,10 @@ extern int stop_8021x(void);
 #endif
 #ifdef RTCONFIG_DNSMASQ
 extern void stop_dnsmasq(int force);
+#endif
+#ifdef RTCONFIG_LLDP
+extern void stop_lldpd(void);
+extern int start_lldpd(void);
 #endif
 extern int firmware_check_main(int argc, char *argv[]);
 #ifdef RTCONFIG_DSL

@@ -247,8 +247,8 @@ function addrow(rclass, host, dl, ul, tcpin, tcpout, udpin, udpout, icmpin, icmp
 
 	return '<tr class="' + rclass + '">' +
                 '<td ' + link + ' >' + host + '</td>' +
-                '<td>' + dl + '</td>' +
-                '<td>' + ul + '</td>' +
+                '<td style="text-align: right; padding-right: 8px;">' + dl + '</td>' +
+                '<td style="text-align: right; padding-right: 8px;">' + ul + '</td>' +
                 '<td>' + tcpin + sep +tcpout + '</td>' +
                 '<td>' + udpin + sep + udpout + '</td>' +
                 '<td>' + icmpin + sep + icmpout + '</td>' +
@@ -496,7 +496,6 @@ function switchPage(page){
 <form method="post" name="form" action="apply.cgi" target="hidden_frame">
 <input type="hidden" name="current_page" value="Main_TrafficMonitor_devrealtime.asp">
 <input type="hidden" name="next_page" value="Main_TrafficMonitor_devrealtime.asp">
-<input type="hidden" name="next_host" value="">
 <input type="hidden" name="group_id" value="">
 <input type="hidden" name="modified" value="0">
 <input type="hidden" name="action_mode" value="">

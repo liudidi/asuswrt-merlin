@@ -242,9 +242,9 @@ function addrow(rclass, rtitle, host, dl, ul, total, ip) {
 	return '<tr class="' + rclass + '">' +
                 '<td class="rtitle">' + rtitle + '</td>' +
                 '<td  ' + link + ' class="host">' + host + '</td>' +
-                '<td>' + dl + '</td>' +
-                '<td>' + ul + '</td>' +
-                '<td>' + total + '</td>' +
+                '<td style="text-align: right;  padding-right: 8px;">' + dl + '</td>' +
+                '<td style="text-align: right;  padding-right: 8px;">' + ul + '</td>' +
+                '<td style="text-align: right;  padding-right: 8px;">' + total + '</td>' +
                 '</tr>';
 }
 
@@ -418,7 +418,6 @@ function switchPage(page){
 <form method="post" name="form" action="apply.cgi" target="hidden_frame">
 <input type="hidden" name="current_page" value="Main_TrafficMonitor_devdaily.asp">
 <input type="hidden" name="next_page" value="Main_TrafficMonitor_devdaily.asp">
-<input type="hidden" name="next_host" value="">
 <input type="hidden" name="group_id" value="">
 <input type="hidden" name="modified" value="0">
 <input type="hidden" name="action_mode" value="">

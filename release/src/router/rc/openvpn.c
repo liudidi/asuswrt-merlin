@@ -313,6 +313,12 @@ void start_vpnclient(int clientNum)
 	sprintf(&buffer[0], "vpn_client%d_custom", clientNum);
 	fprintf(fp, "%s", nvram_safe_get(&buffer[0]));
 	fclose(fp);
+
+	// Run postconf customs cript on it if it exists
+	sprintf(&buffer[0], "openvpnclient%d.postconf", clientNum);
+	sprintf(&buffer2[0], "/etc/openvpn/client%d/config.ovpn", clientNum);
+	run_postconf(&buffer[0], &buffer2[0]);
+
 	vpnlog(VPN_LOG_EXTRA,"Done writing config file");
 
 	// Write certification and key files
@@ -562,6 +568,7 @@ void start_vpnserver(int serverNum)
 #endif
 	char nv1[32], nv2[32], nv3[32], fpath[128];
 	int valid = 0;
+	int userauth = 0, useronly = 0;
 
 	sprintf(&buffer[0], "start_vpnserver%d", serverNum);
 	if (getpid() != 1) {
@@ -915,7 +922,11 @@ void start_vpnserver(int serverNum)
 
 		// Enable username/pass authentication (for Asus's PAM support)
 		sprintf(&buffer[0], "vpn_server%d_userpass_auth", serverNum);
-		if ( nvram_get_int(&buffer[0]) ) {
+		userauth = nvram_get_int(&buffer[0]);
+		sprintf(&buffer[0], "vpn_server%d_igncrt", serverNum);
+		useronly = userauth && nvram_get_int(&buffer[0]);
+
+		if ( userauth ) {
 			//authentication
 			fprintf(fp, "plugin /usr/lib/openvpn-plugin-auth-pam.so openvpn\n");
 			fprintf(fp_client, "auth-user-pass\n");
@@ -923,8 +934,7 @@ void start_vpnserver(int serverNum)
 			//ignore client certificate, but only if user/pass auth is enabled
 			//That way, existing configuration (pre-Asus OVPN)
 			//will remain unchanged.
-			sprintf(&buffer[0], "vpn_server%d_igncrt", serverNum);
-			if ( nvram_get_int(&buffer[0]) ) {
+			if ( useronly ) {
 				fprintf(fp, "client-cert-not-required\n");
 				fprintf(fp, "username-as-common-name\n");
 				fprintf(fp, "duplicate-cn\n");	//user share the same account
@@ -967,6 +977,11 @@ void start_vpnserver(int serverNum)
 	sprintf(&buffer[0], "vpn_server%d_custom", serverNum);
 	fprintf(fp, "%s", nvram_safe_get(&buffer[0]));
 	fclose(fp);
+
+	// Run postconf customs cript on it if it exists
+	sprintf(&buffer[0], "openvpnserver%d.postconf", serverNum);
+	sprintf(&buffer2[0], "/etc/openvpn/server%d/config.ovpn", serverNum);
+	run_postconf(&buffer[0], &buffer2[0]);
 
 	vpnlog(VPN_LOG_EXTRA,"Done writing server config file");
 
@@ -1101,43 +1116,46 @@ void start_vpnserver(int serverNum)
 		if (buffer2[strlen(buffer2)-1] != '\n') fprintf(fp_client, "\n");	// Append newline if missing
 		fprintf(fp_client, "</ca>\n");
 
-		/*
-		   See if stored client cert was signed with our stored CA.  If not, it means 
-		   the CA was changed by the user and the current client crt/key no longer match,
-		   so we should not insert them in the exported client ovp file.
-		*/
-		fp = fopen("/tmp/test.crt", "w");
-		sprintf(&buffer[0], "vpn_crt_server%d_client_crt", serverNum);
-		fprintf(fp, "%s", get_parsed_crt(&buffer[0], buffer2));
-		fclose(fp);
+		// Only do this if we do not have both userauth and useronly enabled at the same time
+		if ( !(userauth && useronly) ) {
+			/*
+			   See if stored client cert was signed with our stored CA.  If not, it means 
+			   the CA was changed by the user and the current client crt/key no longer match,
+			   so we should not insert them in the exported client ovp file.
+			*/
+			fp = fopen("/tmp/test.crt", "w");
+			sprintf(&buffer[0], "vpn_crt_server%d_client_crt", serverNum);
+			fprintf(fp, "%s", get_parsed_crt(&buffer[0], buffer2));
+			fclose(fp);
 
-		sprintf(&buffer[0], "openssl verify -CAfile /etc/openvpn/server%d/ca.crt /tmp/test.crt > /tmp/output.txt", serverNum);
-		system(&buffer[0]);
-		f_read_string("/tmp/output.txt", &buffer[0], 64);
-                unlink("/tmp/test.crt");
+			sprintf(&buffer[0], "openssl verify -CAfile /etc/openvpn/server%d/ca.crt /tmp/test.crt > /tmp/output.txt", serverNum);
+			system(&buffer[0]);
+			f_read_string("/tmp/output.txt", &buffer[0], 64);
+	                unlink("/tmp/test.crt");
 
-		if (!strncmp(&buffer[0],"/tmp/test.crt: OK",17))
-			valid = 1;
+			if (!strncmp(&buffer[0],"/tmp/test.crt: OK",17))
+				valid = 1;
 
-		fprintf(fp_client, "<cert>\n");
-		sprintf(&buffer[0], "vpn_crt_server%d_client_crt", serverNum);
-		if ((valid == 1) && ( !nvram_is_empty(&buffer[0]) ) ) {
-			fprintf(fp_client, "%s", get_parsed_crt(&buffer[0], buffer2));
-			if (buffer2[strlen(buffer2)-1] != '\n') fprintf(fp_client, "\n");  // Append newline if missing
-		} else {
-			fprintf(fp_client, "    paste client certificate data here\n");
+			fprintf(fp_client, "<cert>\n");
+			sprintf(&buffer[0], "vpn_crt_server%d_client_crt", serverNum);
+			if ((valid == 1) && ( !nvram_is_empty(&buffer[0]) ) ) {
+				fprintf(fp_client, "%s", get_parsed_crt(&buffer[0], buffer2));
+				if (buffer2[strlen(buffer2)-1] != '\n') fprintf(fp_client, "\n");  // Append newline if missing
+			} else {
+				fprintf(fp_client, "    paste client certificate data here\n");
+			}
+			fprintf(fp_client, "</cert>\n");
+
+			fprintf(fp_client, "<key>\n");
+			sprintf(&buffer[0], "vpn_crt_server%d_client_key", serverNum);
+			if ((valid == 1) && ( !nvram_is_empty(&buffer[0]) ) ) {
+				fprintf(fp_client, "%s", get_parsed_crt(&buffer[0], buffer2));
+				if (buffer2[strlen(buffer2)-1] != '\n') fprintf(fp_client, "\n");  // Append newline if missing
+			} else {
+				fprintf(fp_client, "    paste client key data here\n");
+			}
+			fprintf(fp_client, "</key>\n");
 		}
-		fprintf(fp_client, "</cert>\n");
-
-		fprintf(fp_client, "<key>\n");
-		sprintf(&buffer[0], "vpn_crt_server%d_client_key", serverNum);
-		if ((valid == 1) && ( !nvram_is_empty(&buffer[0]) ) ) {
-			fprintf(fp_client, "%s", get_parsed_crt(&buffer[0], buffer2));
-			if (buffer2[strlen(buffer2)-1] != '\n') fprintf(fp_client, "\n");  // Append newline if missing
-		} else {
-			fprintf(fp_client, "    paste client key data here\n");
-		}
-		fprintf(fp_client, "</key>\n");
 
 		sprintf(&buffer[0], "vpn_crt_server%d_dh", serverNum);
 		if ( !nvram_is_empty(&buffer[0]) )
@@ -1548,7 +1566,7 @@ void write_vpn_dnsmasq_config(FILE* f)
 					while( !feof(dnsf) )
 					{
 						ch = fgetc(dnsf);
-						fputc(ch==EOF?'\n':ch, f);
+						fputc(ch==255?'\n':ch, f);
 					}
 
 					fclose(dnsf);
@@ -1564,7 +1582,7 @@ int write_vpn_resolv(FILE* f)
 	struct dirent *file;
 	char *fn, ch, num, buf[24];
 	FILE *dnsf;
-	int exclusive = 0;
+	int strictlevel = 0;
 
 	if ( chdir("/etc/openvpn/dns") )
 		return 0;
@@ -1589,21 +1607,21 @@ int write_vpn_resolv(FILE* f)
 			while( !feof(dnsf) )
 			{
 				ch = fgetc(dnsf);
-				fputc(ch==EOF?'\n':ch, f);
+				fputc(ch==255?'\n':ch, f);
 			}
 
 			fclose(dnsf);
 
 			snprintf(&buf[0], sizeof(buf), "vpn_client%c_adns", num);
-			if ( nvram_get_int(&buf[0]) == 3 )
-				exclusive = 1;
+
+			strictlevel = nvram_get_int(&buf[0]);
 		}
 	}
 	vpnlog(VPN_LOG_EXTRA, "Done with DNS entries...");
 
 	closedir(dir);
 
-	return exclusive;
+	return strictlevel;
 }
 
 void create_openvpn_passwd()

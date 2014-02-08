@@ -77,13 +77,15 @@ ref.refresh = function(text) {
 
 				h.tx.splice(0, 1);
 				h.tx.push((c.tx < p.tx) ? (c.tx + (0xFFFFFFFF - p.tx)) : (c.tx - p.tx));
+				h.count++;
+				if (h.count > updateMaxL) h.count = updateMaxL;
 			}
 			else if (!speed_history[i]) {
 				speed_history[i] = {};
 				h = speed_history[i];
 				h.rx = [];
 				h.tx = [];
-				for (j = 300; j > 0; --j) {
+				for (j = updateMaxL; j > 0; --j) {
 					h.rx.push(0);
 					h.tx.push(0);
 				}
@@ -173,7 +175,6 @@ function switchPage(page){
 <form method="post" name="form" action="apply.cgi" target="hidden_frame">
 <input type="hidden" name="current_page" value="Main_TrafficMonitor_realtime.asp">
 <input type="hidden" name="next_page" value="Main_TrafficMonitor_realtime.asp">
-<input type="hidden" name="next_host" value="">
 <input type="hidden" name="group_id" value="">
 <input type="hidden" name="modified" value="0">
 <input type="hidden" name="action_mode" value="">

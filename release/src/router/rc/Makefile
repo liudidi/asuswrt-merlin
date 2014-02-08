@@ -15,6 +15,9 @@ endif
 
 ifeq ($(RTCONFIG_RALINK),y)
 CFLAGS += -I$(TOP)/shared/sysdeps/ralink -I$(TOP)/wireless_tools
+ifneq ($(findstring MAC_REPEATER=, $(shell cat $(LINUXDIR)/.config)),)
+export CFLAGS += -DMAC_REPEATER
+endif
 endif
 
 ifeq ($(RTN14U),y)
@@ -23,6 +26,10 @@ endif
 
 ifeq ($(RTAC52U),y)
 export CFLAGS += -DRTAC52U
+endif
+
+ifeq ($(RTAC51U),y)
+export CFLAGS += -DRTAC51U
 endif
 
 LDFLAGS = -L$(TOP)/nvram${BCMEX} -lnvram -L$(TOP)/shared -lshared -lcrypt -L$(TOP)/libbcmcrypto -lbcmcrypto
@@ -51,7 +58,7 @@ endif
 ifeq ($(RTCONFIG_PUSH_EMAIL),y)
 LDFLAGS += -L$(TOP)/openssl -lcrypto -lssl
 LDFLAGS += -L$(TOP)/curl-7.21.7/lib/.libs -lcurl
-LDFLAGS += -L$(TOP)/libxml2/.libs -lxml2 -lpthread
+LDFLAGS += -L$(TOP)/libxml2/.libs -lxml2
 LDFLAGS += -L$(TOP)/wb -lws
 LDFLAGS += -L$(TOP)/push_log -lpush_log
 endif
@@ -107,7 +114,6 @@ OBJS += phy_tempsense.o
 endif
 ifeq ($(RTCONFIG_BCMARM),y)
 OBJS += bcmutils.o
-OBJS += wlaide.o
 endif
 
 ifeq ($(RTCONFIG_RALINK),y)
@@ -342,9 +348,6 @@ endif
 	@cd $(INSTALLDIR)/sbin && ln -sf rc get_phy_status
 	@cd $(INSTALLDIR)/sbin && ln -sf rc get_phy_speed
 	@cd $(INSTALLDIR)/sbin && ln -sf rc firmware_check
-ifeq ($(RTCONFIG_BCMARM),y)
-	@cd $(INSTALLDIR)/sbin && ln -sf rc wlaide
-endif
 
 clean:
 	rm -f rc *.o .*.depend

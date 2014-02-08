@@ -8,7 +8,7 @@
 <meta HTTP-EQUIV="Expires" CONTENT="-1">
 <link rel="shortcut icon" href="images/favicon.png">
 <link rel="icon" href="images/favicon.png">
-<title>ASUS Wireless Router <#Web_Title#> - OpenVPN Client Settings</title>
+<title><#Web_Title#> - OpenVPN Client Settings</title>
 <link rel="stylesheet" type="text/css" href="index_style.css">
 <link rel="stylesheet" type="text/css" href="form_style.css">
 
@@ -342,16 +342,16 @@ function applyRule(){
 	document.form.vpn_clientx_eas.value = tmp_value;
 
 	document.form.vpn_client_if.value = document.form.vpn_client_if_x.value;
-	
+
 	document.form.submit();
 
 }
 
 function change_vpn_unit(val){
-		document.form.action_mode.value = "change_vpn_client_unit";
-		document.form.action = "apply.cgi";
-        document.form.target = "";
-        document.form.submit();
+	document.form.action_mode.value = "change_vpn_client_unit";
+	document.form.action = "apply.cgi";
+	document.form.target = "";
+	document.form.submit();
 }
 
 /* password item show or not */
@@ -400,6 +400,18 @@ function ovpnFileChecker(){
 	});
 }
 
+
+function update_local_ip(object){
+
+	if (object.name == "vpn_client_local_1")
+		document.form.vpn_client_local_2.value = object.value;
+	else if (object.name == "vpn_client_local_2")
+		document.form.vpn_client_local_1.value = object.value;
+
+	document.form.vpn_client_local.value = object.value;
+}
+
+
 </script>
 </head>
 
@@ -428,8 +440,8 @@ function ovpnFileChecker(){
 										<tr>
 											<th>Static Key</th>
 											<td>
-												<textarea rows="8" class="textarea_ssh_table" id="edit_vpn_crt_client1_static" name="edit_vpn_crt_client1_static" cols="65" maxlength="3499"><% nvram_get("vpn_crt_client1_static"); %></textarea>
-												<textarea rows="8" class="textarea_ssh_table" id="edit_vpn_crt_client2_static" name="edit_vpn_crt_client2_static" cols="65" maxlength="3499"><% nvram_get("vpn_crt_client2_static"); %></textarea>
+												<textarea rows="8" class="textarea_ssh_table" id="edit_vpn_crt_client1_static" name="edit_vpn_crt_client1_static" cols="65" maxlength="3499"><% nvram_clean_get("vpn_crt_client1_static"); %></textarea>
+												<textarea rows="8" class="textarea_ssh_table" id="edit_vpn_crt_client2_static" name="edit_vpn_crt_client2_static" cols="65" maxlength="3499"><% nvram_clean_get("vpn_crt_client2_static"); %></textarea>
 											</td>
 										</tr>
 										<tr>
@@ -478,7 +490,6 @@ function ovpnFileChecker(){
 <form method="post" name="form" id="ruleForm" action="/start_apply.htm" target="hidden_frame">
 <input type="hidden" name="current_page" value="Advanced_OpenVPNClient_Content.asp">
 <input type="hidden" name="next_page" value="Advanced_OpenVPNClient_Content.asp">
-<input type="hidden" name="next_host" value="">
 <input type="hidden" name="modified" value="0">
 <input type="hidden" name="action_mode" value="apply">
 <input type="hidden" name="action_script" value="">
@@ -499,7 +510,7 @@ function ovpnFileChecker(){
 <input type="hidden" name="vpn_upload_type" value="ovpn">
 <input type="hidden" name="vpn_upload_unit" value="<% nvram_get("vpn_client_unit"); %>">
 <input type="hidden" name="vpn_client_if" value="<% nvram_get("vpn_client_if"); %>">
-
+<input type="hidden" name="vpn_client_local" value="<% nvram_get("vpn_client_local"); %>">
 
 <table class="content" align="center" cellpadding="0" cellspacing="0">
   <tr>
@@ -711,7 +722,7 @@ function ovpnFileChecker(){
 					<tr id="client_local_1">
 						<th>Local/remote endpoint addresses</th>
 						<td>
-							<input type="text" maxlength="15" class="input_15_table" name="vpn_client_local" onkeypress="return is_ipaddr(this, event);" value="<% nvram_get("vpn_client_local"); %>">
+							<input type="text" maxlength="15" class="input_15_table" name="vpn_client_local_1" onkeypress="return is_ipaddr(this, event);" onblur="update_local_ip(this);" value="<% nvram_get("vpn_client_local"); %>">
 							<input type="text" maxlength="15" class="input_15_table" name="vpn_client_remote" onkeypress="return is_ipaddr(this, event);" value="<% nvram_get("vpn_client_remote"); %>">
 						</td>
 					</tr>
@@ -719,7 +730,7 @@ function ovpnFileChecker(){
 					<tr id="client_local_2">
 						<th>Tunnel address/netmask</th>
 						<td>
-							<input type="text" maxlength="15" class="input_15_table" name="vpn_client_local" onkeypress="return is_ipaddr(this, event);" value="<% nvram_get("vpn_client_local"); %>">
+							<input type="text" maxlength="15" class="input_15_table" name="vpn_client_local_2" onkeypress="return is_ipaddr(this, event);" onblur="update_local_ip(this);" value="<% nvram_get("vpn_client_local"); %>">
 							<input type="text" maxlength="15" class="input_15_table" name="vpn_client_nm" onkeypress="return is_ipaddr(this, event);" value="<% nvram_get("vpn_client_nm"); %>">
 						</td>
 					</tr>

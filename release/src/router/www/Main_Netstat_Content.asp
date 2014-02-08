@@ -76,7 +76,6 @@ function onSubmitCtrl(o, s) {
 
 function init(){
 		show_menu();
-		load_body();
 		showLANIPList();
 
 		if(downsize_4m_support){	// rm cmd for downsize //downsize_8m_support
@@ -276,7 +275,6 @@ function validForm(){
 <form method="GET" name="form" action="/apply.cgi" target="hidden_frame"> 
 <input type="hidden" name="current_page" value="Main_Netstat_Content.asp">
 <input type="hidden" name="next_page" value="Main_Netstat_Content.asp">
-<input type="hidden" name="next_host" value="">
 <input type="hidden" name="group_id" value="">
 <input type="hidden" name="modified" value="0">
 <input type="hidden" name="action_mode" value="">
@@ -318,7 +316,7 @@ function validForm(){
 										</tr>										
 										<tr>
 													<!-- client info -->
-											<th width="20%">Option</th>
+											<th width="20%"><#NetworkTools_option#></th>
 											<td>
 												<select id="NetOption" class="input_option" name="NetOption" onChange="append_value(this);">
 													<option value="-a">Display all sockets</option>
@@ -332,15 +330,15 @@ function validForm(){
 											</td>			
 										</tr>
 										<tr id="targetip_tr" style="display:none;">
-											<th width="20%">Target IP</th>
+											<th width="20%"><#NetworkTools_target#> IP</th>
 											<td>
 													<input type="text" id="targetip" class="input_15_table" maxlength="15" name="targetip" onKeyPress="return is_ipaddr(this,event)" onClick="hideClients_Block();">
-												<img id="pull_arrow" height="14px;" src="/images/arrow-down.gif" style="position:absolute;*margin-left:-3px;*margin-top:1px;" onclick="pullLANIPList(this);" title="Select the device name of DHCP clients." onmouseover="over_var=1;" onmouseout="over_var=0;">
+												<img id="pull_arrow" height="14px;" src="/images/arrow-down.gif" style="position:absolute;*margin-left:-3px;*margin-top:1px;" onclick="pullLANIPList(this);" title="<#select_device_name#>" onmouseover="over_var=1;" onmouseout="over_var=0;">
 												<div id="ClientList_Block_PC" class="ClientList_Block_PC"></div>
 											</td>										
 										</tr>										
 										<tr id="ExtOption_tr" style="display:none;">
-											<th width="20%">Extended option</th>
+											<th width="20%"><#NetworkTools_extended_option#></th>
 											<td>
 												<select id="ExtOption" class="input_option" name="ExtOption">
 													<option value="-r state" selected>Sort by state</option>
@@ -352,7 +350,7 @@ function validForm(){
 											</td>										
 										</tr>						
 										<tr id = "resolvename" style="">
-											<th width="20%">Resolve name</th>
+											<th width="20%"><#NetworkTools_ResolveName#></th>
 											<td>
 												<select id="ResolveName" class="input_option" name="ResolveName">
 													<option value="0">No</option>

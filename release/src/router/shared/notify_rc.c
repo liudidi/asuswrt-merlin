@@ -72,6 +72,11 @@ int notify_rc_and_wait_2min(const char *event_name)
 	return notify_rc_internal(event_name, TRUE, 120);
 }
 
+int notify_rc_and_period_wait(const char *event_name, int wait)
+{
+	return notify_rc_internal(event_name, TRUE, wait);
+}
+
 /*
  * int wait_rc_service(int wait)
  * wait: seconds to wait and check
@@ -112,7 +117,6 @@ static int notify_rc_internal(const char *event_name, bool do_wait, int wait)
 {
 	int i;
 	char p2[16];
-	int got_right = 1;
 
 	if (!event_name || wait < 0)
 		return -1;

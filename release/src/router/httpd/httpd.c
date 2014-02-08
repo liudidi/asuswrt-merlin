@@ -222,6 +222,7 @@ int change_passwd = 0;
 int reget_passwd = 0;	
 int x_Setting = 0;
 int skip_auth = 0;
+int isLogout = 0;
 char url[128];
 int http_port=SERVER_PORT;
 
@@ -332,6 +333,12 @@ auth_check( char* dirname, char* authorization ,char* url)
 	char *temp_ip_str;
 	time_t dt;
 
+	if(isLogout == 1){
+		isLogout = 0;
+		send_authenticate( dirname );
+                return 0;
+	}
+
 	login_timestamp_tmp = uptime();
 	dt = login_timestamp_tmp - last_login_timestamp;
 	if(last_login_timestamp != 0 && dt > 60){
@@ -348,10 +355,10 @@ auth_check( char* dirname, char* authorization ,char* url)
 		if(login_try%MAX_login == 0)
 			logmessage(HEAD_HTTP_LOGIN, "Detect abnormal logins at %d times. The newest one was from %s.", login_try, temp_ip_str);
 
+#ifdef LOGIN_LOCK
 		send_authenticate( dirname );
-// This is currently badly implemented - any software that might automatically access port 80
-// on your LAN might end up getting yourself locked out.  For now, we will just log the attempts.
-//		return 0;
+		return 0;
+#endif
 	}
 
 	//printf("[httpd] auth chk:%s, %s\n", dirname, url);	// tmp test
@@ -964,8 +971,10 @@ handle_request(void)
 	}
 
 	if(!fromapp) {
-		if(!strcmp(file, "Logout.asp")) 
+		if(!strcmp(file, "Logout.asp")){
+			isLogout = 1;
 			http_logout(login_ip_tmp);
+		}
 	}
 }
 
@@ -1197,7 +1206,7 @@ load_dictionary (char *lang, pkw_t pkw)
 #ifndef RELOAD_DICT
 	static char loaded_dict[12] = {'\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0'};
 #endif  // RELOAD_DICT
-#if RTCONFIG_DYN_DICT_NAME
+#ifdef RTCONFIG_DYN_DICT_NAME
 	char *dyn_dict_buf;
 	char *dyn_dict_buf_new;
 #endif
@@ -1250,7 +1259,7 @@ load_dictionary (char *lang, pkw_t pkw)
 	dict_size -= 3;
 	printf ("dict_size %d\n", dict_size);
 
-#if RTCONFIG_DYN_DICT_NAME
+#ifdef RTCONFIG_DYN_DICT_NAME
 	dyn_dict_buf = malloc(dict_size);
 	fseek (dfp, 0L, SEEK_SET);
 	// skip BOM

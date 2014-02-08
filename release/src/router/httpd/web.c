@@ -74,6 +74,7 @@
 #endif
 
 #ifdef RTCONFIG_USB
+#include <usb_info.h>
 #include <disk_io_tools.h>
 #include <disk_initial.h>
 #include <disk_share.h>
@@ -119,7 +120,7 @@ extern int ej_wl_scan_2g(int eid, webs_t wp, int argc, char_t **argv);
 extern int ej_wl_scan_5g(int eid, webs_t wp, int argc, char_t **argv);
 extern int ej_wl_channel_list_2g(int eid, webs_t wp, int argc, char_t **argv);
 extern int ej_wl_channel_list_5g(int eid, webs_t wp, int argc, char_t **argv);
-#ifdef CONFIG_BCMWL5
+#if defined(CONFIG_BCMWL5) || (defined(RTCONFIG_RALINK) && defined(RTCONFIG_WIRELESSREPEATER))
 extern int ej_wl_rate_2g(int eid, webs_t wp, int argc, char_t **argv);
 extern int ej_wl_rate_5g(int eid, webs_t wp, int argc, char_t **argv);
 #endif
@@ -1292,6 +1293,7 @@ void copy_index_to_unindex(char *prefix, int unit, int subunit)
 	char tmp[64], unitprefix[32];
 
 	// check if unit exist
+	if(unit == -1) return;
 	snprintf(unitptr, sizeof(unitptr), "%sunit", prefix);
 	if((value=nvram_get(unitptr))==NULL) return;
 
@@ -1906,7 +1908,7 @@ static int wanlink_hook(int eid, webs_t wp, int argc, char_t **argv){
 
 	/* current unit */
 #ifdef RTCONFIG_DUALWAN
-	if(nvram_match("wans_mode", "lb"))
+	if(nvram_match("wans_mode", "lb")|| nvram_match("wans_mode", "fo"))
 		unit = WAN_UNIT_FIRST;
 	else
 #endif
@@ -1921,12 +1923,7 @@ static int wanlink_hook(int eid, webs_t wp, int argc, char_t **argv){
 
 	wan_proto = nvram_safe_get(strcat_r(prefix, "proto", tmp));
 
-#ifdef RTCONFIG_DUALWAN
-	if(get_dualwan_by_unit(unit) == WANS_DUALWAN_IF_USB)
-#else
-	if(unit == WAN_UNIT_SECOND)
-#endif
-	{
+	if (dualwan_unit__usbif(unit)) {
 		if(wan_state == WAN_STATE_INITIALIZING){
 			status = 0;
 		}
@@ -2012,11 +2009,7 @@ static int wanlink_hook(int eid, webs_t wp, int argc, char_t **argv){
 		}
 	}
 
-#ifdef RTCONFIG_DUALWAN
-	if(get_dualwan_by_unit(unit) == WANS_DUALWAN_IF_USB)
-#else
-	if(unit == WAN_UNIT_SECOND)
-#endif
+	if (dualwan_unit__usbif(unit))
 		type = "USB Modem";
 	else
 		type = wan_proto;
@@ -2101,8 +2094,7 @@ static int secondary_wanlink_hook(int eid, webs_t wp, int argc, char_t **argv){
 
 	wan_proto = nvram_safe_get(strcat_r(prefix, "proto", tmp));
 
-	if(get_dualwan_by_unit(unit) == WANS_DUALWAN_IF_USB)
-	{
+	if (dualwan_unit__usbif(unit)) {
 		if(wan_state == WAN_STATE_INITIALIZING){
 			status = 0;
 		}
@@ -2187,7 +2179,7 @@ static int secondary_wanlink_hook(int eid, webs_t wp, int argc, char_t **argv){
 		}
 	}
 
-	if(get_dualwan_by_unit(unit) == WANS_DUALWAN_IF_USB)
+	if (dualwan_unit__usbif(unit))
 		type = "USB Modem";
 	else
 		type = wan_proto;
@@ -2991,8 +2983,9 @@ static int compare_back(FILE *fp, int current_line, char *buffer)
 static void find_hostname_by_mac(char *mac, char *hostname)
 {
 	FILE *fp;
-	char expire[16], macaddr[32], ipaddr[16], host_name[64];
-	int r;
+	unsigned int expires;
+	char *macaddr, *ipaddr, *host_name, *next;
+	char line[256];
 
 	if ((fp = fopen(DHCP_LEASE_FILE, "r")) == NULL)
 	{
@@ -3002,10 +2995,15 @@ static void find_hostname_by_mac(char *mac, char *hostname)
 		goto END;
 	}
 
-	while ((r = fscanf(fp, "%16s %32s %16s %64s\n",
-		      expire, macaddr, ipaddr, host_name)) != EOF)
+	while ((next = fgets(line, sizeof(line), fp)) != NULL)
 	{
-		if (r != 4) continue;
+               if (sscanf(next, "%u ", &expires) != 1)
+                        continue;
+
+                strsep(&next, " ");
+                macaddr = strsep(&next, " ") ? : "";
+                ipaddr = strsep(&next, " ") ? : "";
+                host_name = strsep(&next, " ") ? : "";
 
 		if (strncasecmp(macaddr, mac, 17) == 0) {
 			fclose(fp);
@@ -3121,10 +3119,10 @@ int
 ej_lan_ipv6_network(int eid, webs_t wp, int argc, char_t **argv)
 {
 	FILE *fp;
-	char hostname[64], macaddr[32], ipaddr[256];
+	char hostname[64], macaddr[32], ipaddr[8192], ipaddrs[8192];
 	char ipv6_dns_str[1024];
-	char *wan_type, *wan_dns;
-	int service, i, ret = 0;
+	char *wan_type, *wan_dns, *p;
+	int service, i, ret = 0, first;
 
 	if (!(ipv6_enabled() && is_routing_enabled())) {
 		ret += websWrite(wp, "IPv6 disabled\n");
@@ -3198,17 +3196,28 @@ ej_lan_ipv6_network(int eid, webs_t wp, int argc, char_t **argv)
 		return ret;
 	}
 
-	while (fscanf(fp, "%64s %32s %256s\n", hostname, macaddr, ipaddr) == 3) {
+	while (fscanf(fp, "%64s %32s %8192s\n", hostname, macaddr, ipaddr) == 3) {
 		if (strlen(hostname) > 32) {
 			strcpy(hostname + 29, "...");
 			hostname[32] = '\0';
 		}
-#if 0
-		if ((p = strchr(ipaddr, ',')))
-			*p = '\0';
-#endif
+
+		memset(ipaddrs, 0, sizeof(ipaddrs));
+		first = 1;
+		p = strtok(ipaddr, ",");
+		while (p)
+		{
+			if (first)
+				first = 0;
+			else
+				sprintf(ipaddrs, "%s, ", ipaddrs);
+
+			sprintf(ipaddrs, "%s%s", ipaddrs, (char *)p);
+			p = strtok(NULL, ",");
+		}
+
 		ret += websWrite(wp, "%-32s %-17s %-39s\n",
-				 hostname, macaddr, ipaddr);
+				 hostname, macaddr, ipaddrs);
 	}
 	fclose(fp);
 
@@ -3392,8 +3401,6 @@ ej_route_table(int eid, webs_t wp, int argc, char_t **argv)
 
 #ifdef RTCONFIG_IPV6
 	if (get_ipv6_service() != IPV6_DISABLED) {
-		ret += websWrite(wp, "\n"
-				     "IPv6 routing table\n");
 
 #if 1 /* temporary till httpd route table redo */
 	if ((fp = fopen("/proc/net/if_inet6", "r")) == (FILE*)0)
@@ -3461,7 +3468,7 @@ static int ej_get_arp_table(int eid, webs_t wp, int argc, char_t **argv){
 	return 0;
 }
 
-#if defined(CONFIG_BCMWL5) || defined (MTK_APCLI)
+#if defined(CONFIG_BCMWL5) || (defined(RTCONFIG_RALINK) && defined(RTCONFIG_WIRELESSREPEATER))
 static int ej_get_ap_info(int eid, webs_t wp, int argc, char_t **argv)
 {
 	FILE *fp;
@@ -3537,7 +3544,7 @@ static int ej_get_client_detail_info(int eid, webs_t wp, int argc, char_t **argv
 		memset(output_buf, 0, 256);
 		memset(devname, 0, LINE_SIZE);
 
-		len = strlen( p_client_info_tab->device_name[i]);
+		len = strlen( (char *) p_client_info_tab->device_name[i]);
 		for (j=0; (j < len) && (j < LINE_SIZE-1); j++) {
 			character = p_client_info_tab->device_name[i][j];
 			if ((isalnum(character)) || (character == ' ') || (character == '-') || (character == '_'))
@@ -3678,6 +3685,86 @@ static int ej_get_changed_status(int eid, webs_t wp, int argc, char_t **argv){
 }
 
 #ifdef RTCONFIG_USB
+static int ej_show_usb_path(int eid, webs_t wp, int argc, char_t **argv){
+	DIR *bus_usb;
+	struct dirent *interface;
+	char usb_port[8], port_path[8], *ptr;
+	int port_num, port_order, hub_order;
+	char all_usb_path[MAX_USB_PORT][MAX_USB_HUB_PORT][2][16]; // MAX USB hub port number is 6.
+	char prefix[] = "usb_pathXXXXXXXXXXXXXXXXX_";
+	int port_set, got_port, got_hub;
+
+	if((bus_usb = opendir(USB_DEVICE_PATH)) == NULL)
+		return -1;
+
+	memset(all_usb_path, 0, MAX_USB_PORT*MAX_USB_HUB_PORT*2*16);
+
+	while((interface = readdir(bus_usb)) != NULL){
+		if(interface->d_name[0] == '.')
+			continue;
+
+		if(!isdigit(interface->d_name[0]))
+			continue;
+
+		if(strchr(interface->d_name, ':'))
+			continue;
+
+		if(get_usb_port_by_string(interface->d_name, usb_port, 8) == NULL)
+			continue;
+
+		port_num = get_usb_port_number(usb_port);
+		port_order = port_num-1;
+		if((ptr = strchr(interface->d_name+strlen(usb_port), '.')) != NULL)
+			hub_order = atoi(ptr+1);
+		else
+			hub_order = 0;
+
+		if(get_path_by_node(interface->d_name, port_path, 8) == NULL)
+			continue;
+
+		strncpy(all_usb_path[port_order][hub_order][0], port_path, 16);
+		snprintf(prefix, sizeof(prefix), "usb_path%s", port_path);
+		strncpy(all_usb_path[port_order][hub_order][1], nvram_safe_get(prefix), 16);
+	}
+	closedir(bus_usb);
+
+	port_set = got_port = got_hub = 0;
+
+	websWrite(wp, "[");
+	for(port_order = 0; port_order < MAX_USB_PORT; ++port_order){
+		got_hub = 0;
+		for(hub_order = 0; hub_order < MAX_USB_HUB_PORT; ++hub_order){
+			if(strlen(all_usb_path[port_order][hub_order][1]) > 0){
+				if(!port_set){ // port range.
+					port_set = 1;
+
+					if(!got_port)
+						got_port = 1;
+					else
+						websWrite(wp, ", ");
+
+					websWrite(wp, "[");
+				}
+
+				if(!got_hub)
+					got_hub = 1;
+				else
+					websWrite(wp, ", ");
+
+				websWrite(wp, "[\"%s\", \"%s\"]", all_usb_path[port_order][hub_order][0], all_usb_path[port_order][hub_order][1]);
+			}
+		}
+
+		if(port_set){ // port range.
+			port_set = 0;
+			websWrite(wp, "]");
+		}
+	}
+	websWrite(wp, "]");
+
+	return 0;
+}
+
 static int ej_disk_pool_mapping_info(int eid, webs_t wp, int argc, char_t **argv){
 	disk_info_t *disks_info, *follow_disk;
 	partition_info_t *follow_partition;
@@ -4032,89 +4119,45 @@ static int ej_available_disk_names_and_sizes(int eid, webs_t wp, int argc, char_
 	return 0;
 }
 
-#if 0
 static int ej_get_printer_info(int eid, webs_t wp, int argc, char_t **argv){
-	FILE *lpfp;
-	char manufacturer[100], models[100], serialnos[100], pool[100];
-	char buf[500];
-	char *lpparam, *value, *v1 = NULL;
+	int printer_num, got_printer;
+	char prefix[] = "usb_pathXXXXXXXXXXXXXXXXX_", tmp[100];
+	char printer_array[MAX_USB_PRINTER_NUM][4][64];
+	char usb_node[32];
+	char port_path[8];
 
-	if (!(lpfp = fopen("/proc/usblp/usblpid", "r"))){
-		strcpy(manufacturer, "");
-		strcpy(models, "");
-		strcpy(serialnos, "");
-		strcpy(pool, "");
-	}
-	else{
-		while (fgets(buf, 500, lpfp)){
-			value = &buf[0];
-			lpparam = strsep(&value, "=")?:&buf[0];
+	memset(printer_array, 0, MAX_USB_PRINTER_NUM*4*64);
 
-			if (value){
-				v1 = strchr(value, '\n');
-				*v1 = '\0';
+	for(printer_num = 0, got_printer = 0; printer_num < MAX_USB_PRINTER_NUM; ++printer_num){
+		snprintf(prefix, sizeof(prefix), "usb_path_lp%d", printer_num);
+		memset(usb_node, 0, 32);
+		strncpy(usb_node, nvram_safe_get(prefix), 32);
 
-				if (!strcmp(lpparam, "Manufacturer"))
-					sprintf(manufacturer, "\"%s\"", value);
-				else if (!strcmp(lpparam, "Model"))
-					sprintf(models, "\"%s\"", value );
+		if(strlen(usb_node) > 0){
+			if(get_path_by_node(usb_node, port_path, 8) != NULL){
+				snprintf(prefix, sizeof(prefix), "usb_path%s", port_path);
+
+				strncpy(printer_array[got_printer][0], nvram_safe_get(strcat_r(prefix, "_manufacturer", tmp)), 64);
+				strncpy(printer_array[got_printer][1], nvram_safe_get(strcat_r(prefix, "_product", tmp)), 64);
+				strncpy(printer_array[got_printer][2], nvram_safe_get(strcat_r(prefix, "_serial", tmp)), 64);
+				strncpy(printer_array[got_printer][3], port_path, 64);
+
+				++got_printer;
 			}
-		}
-
-		/* compatible for WL700gE platform */
-		strcpy(pool, "VirtualPool");
-		fclose(lpfp);
-	}
-
-	websWrite(wp, "function printer_manufacturers() {\n return [%s];\n}\n", manufacturer);
-	websWrite(wp, "function printer_models() {\n return [%s];\n}\n", models);
-	websWrite(wp, "function printer_serialn() {\n return [%s];\n}\n", "");
-	websWrite(wp, "function printer_pool() {\n return [\"%s\"];\n}\n", pool);
-
-	return 0;
-}
-#else
-#define MAX_PRINTER_NUM 2
-
-static int ej_get_printer_info(int eid, webs_t wp, int argc, char_t **argv){
-	int port_num = 0, first;
-	char tmp[64], prefix[] = "usb_pathX";
-	char printer_array[2][5][64];
-
-	for(port_num = 1; port_num <= MAX_PRINTER_NUM; ++port_num){
-		snprintf(prefix, sizeof(prefix), "usb_path%d", port_num);
-
-		memset(printer_array[port_num-1][0], 0, 64);
-		memset(printer_array[port_num-1][1], 0, 64);
-		memset(printer_array[port_num-1][2], 0, 64);
-		memset(printer_array[port_num-1][3], 0, 64);
-		memset(printer_array[port_num-1][4], 0, 64);
-
-		if(nvram_match(prefix, "printer")){
-			strncpy(printer_array[port_num-1][0], "printer", 64);
-			strncpy(printer_array[port_num-1][1], nvram_safe_get(strcat_r(prefix, "_manufacturer", tmp)), 64);
-			strncpy(printer_array[port_num-1][2], nvram_safe_get(strcat_r(prefix, "_product", tmp)), 64);
-			strncpy(printer_array[port_num-1][3], nvram_safe_get(strcat_r(prefix, "_serial", tmp)), 64);
-			if(!strcmp(printer_array[port_num-1][3], nvram_safe_get("u2ec_serial")))
-				strcpy(printer_array[port_num-1][4], "VirtualPool");
-			else
-				strcpy(printer_array[port_num-1][4], "");
 		}
 	}
 
 	websWrite(wp, "function printer_manufacturers(){\n");
 	websWrite(wp, "    return [");
 
-	first = 1;
-	for(port_num = 1; port_num <= MAX_PRINTER_NUM; ++port_num){
-		if(strlen(printer_array[port_num-1][0]) > 0)
-			websWrite(wp, "\"%s\"", printer_array[port_num-1][1]);
+	for(printer_num = 0; printer_num < got_printer; ++printer_num){
+		if(printer_num != 0)
+			websWrite(wp, ", ");
+
+		if(strlen(printer_array[printer_num][0]) > 0)
+			websWrite(wp, "\"%s\"", printer_array[printer_num][0]);
 		else
 			websWrite(wp, "\"\"");
-		if(first){
-			--first;
-			websWrite(wp, ", ");
-		}
 	}
 
 	websWrite(wp, "];\n");
@@ -4123,16 +4166,14 @@ static int ej_get_printer_info(int eid, webs_t wp, int argc, char_t **argv){
 	websWrite(wp, "function printer_models(){\n");
 	websWrite(wp, "    return [");
 
-	first = 1;
-	for(port_num = 1; port_num <= MAX_PRINTER_NUM; ++port_num){
-		if(strlen(printer_array[port_num-1][0]) > 0)
-			websWrite(wp, "\"%s\"", printer_array[port_num-1][2]);
+	for(printer_num = 0; printer_num < got_printer; ++printer_num){
+		if(printer_num != 0)
+			websWrite(wp, ", ");
+
+		if(strlen(printer_array[printer_num][1]) > 0)
+			websWrite(wp, "\"%s\"", printer_array[printer_num][1]);
 		else
 			websWrite(wp, "\"\"");
-		if(first){
-			--first;
-			websWrite(wp, ", ");
-		}
 	}
 
 	websWrite(wp, "];\n");
@@ -4141,16 +4182,14 @@ static int ej_get_printer_info(int eid, webs_t wp, int argc, char_t **argv){
 	websWrite(wp, "function printer_serialn(){\n");
 	websWrite(wp, "    return [");
 
-	first = 1;
-	for(port_num = 1; port_num <= MAX_PRINTER_NUM; ++port_num){
-		if(strlen(printer_array[port_num-1][0]) > 0)
-			websWrite(wp, "\"%s\"", printer_array[port_num-1][3]);
+	for(printer_num = 0; printer_num < got_printer; ++printer_num){
+		if(printer_num != 0)
+			websWrite(wp, ", ");
+
+		if(strlen(printer_array[printer_num][2]) > 0)
+			websWrite(wp, "\"%s\"", printer_array[printer_num][2]);
 		else
 			websWrite(wp, "\"\"");
-		if(first){
-			--first;
-			websWrite(wp, ", ");
-		}
 	}
 
 	websWrite(wp, "];\n");
@@ -4159,16 +4198,14 @@ static int ej_get_printer_info(int eid, webs_t wp, int argc, char_t **argv){
 	websWrite(wp, "function printer_pool(){\n");
 	websWrite(wp, "    return [");
 
-	first = 1;
-	for(port_num = 1; port_num <= MAX_PRINTER_NUM; ++port_num){
-		if(strlen(printer_array[port_num-1][0]) > 0)
-			websWrite(wp, "\"%s\"", printer_array[port_num-1][4]);
+	for(printer_num = 0; printer_num < got_printer; ++printer_num){
+		if(printer_num != 0)
+			websWrite(wp, ", ");
+
+		if(strlen(printer_array[printer_num][3]) > 0)
+			websWrite(wp, "\"%s\"", printer_array[printer_num][3]);
 		else
 			websWrite(wp, "\"\"");
-		if(first){
-			--first;
-			websWrite(wp, ", ");
-		}
 	}
 
 	websWrite(wp, "];\n");
@@ -4176,7 +4213,122 @@ static int ej_get_printer_info(int eid, webs_t wp, int argc, char_t **argv){
 
 	return 0;
 }
-#endif
+
+static int ej_get_modem_info(int eid, webs_t wp, int argc, char_t **argv){
+	int i, j, got_modem;
+	char prefix[] = "usb_pathXXXXXXXXXXXXXXXXX_", tmp[100];
+	char modem_array[MAX_USB_PORT*MAX_USB_HUB_PORT][4][64];
+	char port_path[8];
+
+	memset(modem_array, 0, MAX_USB_PORT*MAX_USB_HUB_PORT*4*64);
+
+	got_modem = 0;
+	for(i = 1; i <= MAX_USB_PORT; ++i){
+		snprintf(prefix, sizeof(prefix), "usb_path%d", i);
+		if(!strcmp(nvram_safe_get(prefix), "modem")){
+			snprintf(port_path, 8, "%d", i);
+
+			strncpy(modem_array[got_modem][0], nvram_safe_get(strcat_r(prefix, "_manufacturer", tmp)), 64);
+			strncpy(modem_array[got_modem][1], nvram_safe_get(strcat_r(prefix, "_product", tmp)), 64);
+			strncpy(modem_array[got_modem][2], nvram_safe_get(strcat_r(prefix, "_serial", tmp)), 64);
+			strncpy(modem_array[got_modem][3], port_path, 64);
+
+			++got_modem;
+		}
+		else{
+			for(j = 1; j <= MAX_USB_HUB_PORT; ++j){
+				snprintf(prefix, sizeof(prefix), "usb_path%d.%d", i, j);
+
+				if(!strcmp(nvram_safe_get(prefix), "modem")){
+					snprintf(port_path, 8, "%d.%d", i, j);
+
+					strncpy(modem_array[got_modem][0], nvram_safe_get(strcat_r(prefix, "_manufacturer", tmp)), 64);
+					strncpy(modem_array[got_modem][1], nvram_safe_get(strcat_r(prefix, "_product", tmp)), 64);
+					strncpy(modem_array[got_modem][2], nvram_safe_get(strcat_r(prefix, "_serial", tmp)), 64);
+					strncpy(modem_array[got_modem][3], port_path, 64);
+
+					++got_modem;
+				}
+			}
+		}
+	}
+
+	websWrite(wp, "function modem_manufacturers(){\n");
+	websWrite(wp, "    return [");
+
+	for(i = 0; i < got_modem; ++i){
+		if(i != 0)
+			websWrite(wp, ", ");
+
+		if(strlen(modem_array[i][0]) > 0)
+			websWrite(wp, "\"%s\"", modem_array[i][0]);
+		else
+			websWrite(wp, "\"\"");
+	}
+
+	websWrite(wp, "];\n");
+	websWrite(wp, "}\n\n");
+
+	websWrite(wp, "function modem_models(){\n");
+	websWrite(wp, "    return [");
+
+	for(i = 0; i < got_modem; ++i){
+		if(i != 0)
+			websWrite(wp, ", ");
+
+		if(strlen(modem_array[i][1]) > 0)
+			websWrite(wp, "\"%s\"", modem_array[i][1]);
+		else
+			websWrite(wp, "\"\"");
+	}
+
+	websWrite(wp, "];\n");
+	websWrite(wp, "}\n\n");
+
+	websWrite(wp, "function modem_serialn(){\n");
+	websWrite(wp, "    return [");
+
+	for(i = 0; i < got_modem; ++i){
+		if(i != 0)
+			websWrite(wp, ", ");
+
+		if(strlen(modem_array[i][2]) > 0)
+			websWrite(wp, "\"%s\"", modem_array[i][2]);
+		else
+			websWrite(wp, "\"\"");
+	}
+
+	websWrite(wp, "];\n");
+	websWrite(wp, "}\n\n");
+
+	websWrite(wp, "function modem_pool(){\n");
+	websWrite(wp, "    return [");
+
+	for(i = 0; i < got_modem; ++i){
+		if(i != 0)
+			websWrite(wp, ", ");
+
+		if(strlen(modem_array[i][3]) > 0)
+			websWrite(wp, "\"%s\"", modem_array[i][3]);
+		else
+			websWrite(wp, "\"\"");
+	}
+
+	websWrite(wp, "];\n");
+	websWrite(wp, "}\n\n");
+
+	return 0;
+}
+#else
+static int ej_show_usb_path(int eid, webs_t wp, int argc, char_t **argv){
+        websWrite(wp, "[]");
+        return 0;
+}
+
+int ej_apps_fsck_ret(int eid, webs_t wp, int argc, char **argv){
+        websWrite(wp, "[]");
+        return 0;
+}
 #endif
 
 int ej_shown_language_css(int eid, webs_t wp, int argc, char **argv){
@@ -5667,6 +5819,10 @@ static char syslog_txt[] =
 "filename=syslog.txt"
 ;
 
+static char cache_object[] =
+"Cache-Control: max-age=300"
+;
+
 static void 
 do_log_cgi(char *path, FILE *stream)
 {
@@ -5687,6 +5843,7 @@ struct mime_handler mime_handlers[] = {
 	{ "remote.asp", "text/html", no_cache_IE7, do_html_post_and_get, do_ej, NULL },
 	{ "jquery.js", "text/javascript", no_cache_IE7, NULL, do_file, NULL }, // 2010.09 James.
 	{ "httpd_check.htm", "text/html", no_cache_IE7, do_html_post_and_get, do_ej, NULL },
+	{ "get_webdavInfo.asp", "text/html", no_cache_IE7, do_html_post_and_get, do_ej, NULL },
 	{ "**.xml", "text/xml", no_cache_IE7, do_html_post_and_get, do_ej, do_auth },
 	{ "**.htm*", "text/html", no_cache_IE7, do_html_post_and_get, do_ej, do_auth },
 	{ "**.asp*", "text/html", no_cache_IE7, do_html_post_and_get, do_ej, do_auth },
@@ -5696,10 +5853,10 @@ struct mime_handler mime_handlers[] = {
 	{ "**.tgz", "application/octet-stream", NULL, NULL, do_file, NULL },
 	{ "**.zip", "application/octet-stream", NULL, NULL, do_file, NULL },
 	{ "**.ipk", "application/octet-stream", NULL, NULL, do_file, NULL },
-	{ "**.css", "text/css", NULL, NULL, do_file, NULL },
-	{ "**.png", "image/png", NULL, NULL, do_file, NULL },
-	{ "**.gif", "image/gif", NULL, NULL, do_file, NULL },
-	{ "**.jpg", "image/jpeg", NULL, NULL, do_file, NULL },
+	{ "**.css", "text/css", cache_object, NULL, do_file, NULL },
+	{ "**.png", "image/png", cache_object, NULL, do_file, NULL },
+	{ "**.gif", "image/gif", cache_object, NULL, do_file, NULL },
+	{ "**.jpg", "image/jpeg", cache_object, NULL, do_file, NULL },
 	// Viz 2010.08
 	{ "**.svg", "image/svg+xml", NULL, NULL, do_file, NULL },
 	{ "**.swf", "application/x-shockwave-flash", NULL, NULL, do_file, NULL  },
@@ -5772,7 +5929,6 @@ struct except_mime_handler except_mime_handlers[] = {
 	{ "update_appstate.asp", MIME_EXCEPTION_NOAUTH_ALL},
 	{ "update_applist.asp", MIME_EXCEPTION_NOAUTH_ALL},
 	{ "update_cloudstatus.asp", MIME_EXCEPTION_NOAUTH_ALL},
-	{ "get_webdavInfo.asp", MIME_EXCEPTION_NOAUTH_ALL},
 	{ "*.gz", MIME_EXCEPTION_NOAUTH_ALL},
 	{ "*.tgz", MIME_EXCEPTION_NOAUTH_ALL},
 	{ "*.zip", MIME_EXCEPTION_NOAUTH_ALL},
@@ -7228,12 +7384,12 @@ int ej_set_account_all_folder_permission(int eid, webs_t wp, int argc, char **ar
 	return 0;
 }
 
-#ifdef RTCONFIG_DISK_MONITOR
 int ej_apps_fsck_ret(int eid, webs_t wp, int argc, char **argv){
 	disk_info_t *disk_list, *disk_info;
 	partition_info_t *partition_info;
 	FILE *fp;
 
+#ifdef RTCONFIG_DISK_MONITOR
 	disk_list = read_disk_data();
 	if(disk_list == NULL){
 		websWrite(wp, "[]");
@@ -7274,8 +7430,13 @@ int ej_apps_fsck_ret(int eid, webs_t wp, int argc, char **argv){
 	free_disk_data(&disk_list);
 
 	return 0;
+#endif
+
+	websWrite(wp, "[]");
+	return 0;
 }
 
+#ifdef RTCONFIG_DISK_MONITOR
 int ej_apps_fsck_log(int eid, webs_t wp, int argc, char **argv){
 	disk_info_t *disk_list, *disk_info;
 	partition_info_t *partition_info;
@@ -7766,7 +7927,7 @@ int start_autodet(int eid, webs_t wp, int argc, char **argv) {
 	notify_rc("start_autodet");
 	return 0;
 }
-#if defined(CONFIG_BCMWL5) || defined(MTK_APCLI)
+#if defined(CONFIG_BCMWL5) || (defined(RTCONFIG_RALINK) && defined(RTCONFIG_WIRELESSREPEATER))
 int start_wlcscan(int eid, webs_t wp, int argc, char **argv) {
 	notify_rc("start_wlcscan");
 	return 0;
@@ -7811,39 +7972,13 @@ int setting_lan(int eid, webs_t wp, int argc, char **argv){
 	lan_subnet = lan_ip_num&lan_mask_num;
 dbg("http: get lan_subnet=%x!\n", lan_subnet);
 
-#ifdef RTCONFIG_DUALWAN
-	int wan_type;
-
-	for(unit = WAN_UNIT_FIRST; unit < WAN_UNIT_MAX; ++unit){
-		if(unit != wan_primary_ifunit()
-				&& !nvram_match("wans_mode", "lb")
-				)
-			continue;
-
-		wan_type = get_dualwan_by_unit(unit);
-		if(wan_type != WANS_DUALWAN_IF_WAN
-				&& wan_type != WANS_DUALWAN_IF_LAN
-				&& wan_type != WANS_DUALWAN_IF_USB
-				)
-			continue;
-
-		break;
-	}
-	if(unit == WAN_UNIT_MAX){
+	if ((unit = get_primaryif_dualwan_unit()) < 0) {
 dbg("http: Can't get the WAN's unit!\n");
 		websWrite(wp, "0");
 		return 0;
 	}
-#else
-	unit = wan_primary_ifunit();
-#endif
 
-#ifdef RTCONFIG_DUALWAN
-	if(wan_type != WANS_DUALWAN_IF_USB)
-#else
-	if(unit != WAN_UNIT_SECOND)
-#endif
-	{
+	if (!dualwan_unit__usbif(unit)) {
 		wan_prefix(unit, prefix_wan);
 
 		memset(wan_ipaddr_t, 0, 16);
@@ -8159,16 +8294,7 @@ static int ej_netdev(int eid, webs_t wp, int argc, char_t **argv)
 			   		else ++ifname;
 	  	   		if (sscanf(p + 1, "%lu%*u%*u%*u%*u%*u%*u%*u%lu", &rx, &tx) != 2) continue;
 
-#if defined(RTN14U) || defined(RTAC52U)
-/* TODO: it's not the right place, should be moved to shared */
-				if (strcmp(ifname, "vlan2") == 0) 
-				{
-					get_wan_bytecount(0,&tx);
-					get_wan_bytecount(1,&rx);
-				}
-#endif
 				if (!netdev_calc(ifname, ifname_desc, &rx, &tx, ifname_desc2, &rx2, &tx2)) continue;
-
 
 loopagain: 
 				if (!strncmp(ifname_desc, "WIRELESS0", 9)) {
@@ -8580,14 +8706,17 @@ struct ej_handler ej_handlers[] = {
 	{ "sitesurvey", ej_SiteSurvey},
 #endif
 #endif
-#if defined(CONFIG_BCMWL5) || defined(MTK_APCLI)
+#if defined(CONFIG_BCMWL5) || (defined(RTCONFIG_RALINK) && defined(RTCONFIG_WIRELESSREPEATER))
 	{ "get_ap_info", ej_get_ap_info},
 #endif
 	{ "ddns_info", ej_ddnsinfo},
+	{ "show_usb_path", ej_show_usb_path},
+	{ "apps_fsck_ret", ej_apps_fsck_ret},
 #ifdef RTCONFIG_USB
 	{ "disk_pool_mapping_info", ej_disk_pool_mapping_info},
 	{ "available_disk_names_and_sizes", ej_available_disk_names_and_sizes},
 	{ "get_printer_info", ej_get_printer_info},
+	{ "get_modem_info", ej_get_modem_info},
 	{ "get_AiDisk_status", ej_get_AiDisk_status},
 	{ "set_AiDisk_status", ej_set_AiDisk_status},
 	{ "get_all_accounts", ej_get_all_accounts},
@@ -8607,7 +8736,6 @@ struct ej_handler ej_handlers[] = {
 	{ "set_share_mode", ej_set_share_mode},
 	{ "initial_folder_var_file", ej_initial_folder_var_file},
 #ifdef RTCONFIG_DISK_MONITOR
-	{ "apps_fsck_ret", ej_apps_fsck_ret},
 	{ "apps_fsck_log", ej_apps_fsck_log},
 #endif
 	{ "apps_info", ej_apps_info},
@@ -8625,7 +8753,7 @@ struct ej_handler ej_handlers[] = {
 #endif
 
 	{ "start_autodet", start_autodet},
-#if defined(CONFIG_BCMWL5) || defined(MTK_APCLI)
+#if defined(CONFIG_BCMWL5) || (defined(RTCONFIG_RALINK) && defined(RTCONFIG_WIRELESSREPEATER))
 	{ "start_wlcscan", start_wlcscan},
 #endif
 	{ "setting_lan", setting_lan},
@@ -8644,7 +8772,7 @@ struct ej_handler ej_handlers[] = {
 	{ "wl_scan_5g", ej_wl_scan_5g},
 	{ "channel_list_2g", ej_wl_channel_list_2g},
 	{ "channel_list_5g", ej_wl_channel_list_5g},
-#ifdef CONFIG_BCMWL5
+#if defined(CONFIG_BCMWL5) || (defined(RTCONFIG_RALINK) && defined(RTCONFIG_WIRELESSREPEATER))
 	{ "wl_rate_2g", ej_wl_rate_2g},
 	{ "wl_rate_5g", ej_wl_rate_5g},
 #endif
@@ -8710,6 +8838,7 @@ get_nat_vserver_table(int eid, webs_t wp, int argc, char_t **argv)
 	char dst[sizeof("255.255.255.255")];
 	char *range, *host, *port, *ptr, *val;
 	int ret = 0;
+	char chain[16];
 
 	/* dump nat table including VSERVER and VUPNP chains */
 	_eval(nat_argv, ">/tmp/vserver.log", 10, NULL);
@@ -8718,8 +8847,8 @@ get_nat_vserver_table(int eid, webs_t wp, int argc, char_t **argv)
 #ifdef NATSRC_SUPPORT
 		"Source          "
 #endif
-		"Destination     Proto. Port range  Redirect to     Local port\n");
-	/*	 255.255.255.255 other  65535:65535 255.255.255.255 65535:65535 */
+		"Destination     Proto. Port range  Redirect to     Local port  Chain\n");
+	/*	 255.255.255.255 other  65535:65535 255.255.255.255 65535:65535 VUPNP*/
 
 	fp = fopen("/tmp/vserver.log", "r");
 	if (fp == NULL)
@@ -8729,6 +8858,11 @@ get_nat_vserver_table(int eid, webs_t wp, int argc, char_t **argv)
 	{
 		_dprintf("HTTPD: %s\n", line);
 
+		// If it's a chain definition then store it for following rules
+		if (!strncmp(line, "Chain",  5)){
+			if (sscanf(line, "%*s%*[ \t]%15s%*[ \t]%*s", chain) == 1)
+				continue;
+		}
 		tmp[0] = '\0';
 		if (sscanf(line,
 		    "%15s%*[ \t]"		// target
@@ -8741,6 +8875,10 @@ get_nat_vserver_table(int eid, webs_t wp, int argc, char_t **argv)
 
 		/* TODO: add port trigger, portmap, etc support */
 		if (strcmp(target, "DNAT") != 0)
+			continue;
+
+		/* Don't list DNS redirections  from DNSFilter */
+		if (strcmp(chain, "DNSFILTER") ==0)
 			continue;
 
 		/* uppercase proto */
@@ -8773,11 +8911,11 @@ get_nat_vserver_table(int eid, webs_t wp, int argc, char_t **argv)
 #ifdef NATSRC_SUPPORT
 			"%-15s "
 #endif
-			"%-15s %-6s %-11s %-15s %-11s\n",
+			"%-15s %-6s %-11s %-15s %-11s %-15s\n",
 #ifdef NATSRC_SUPPORT
 			src,
 #endif
-			dst, proto, range, host, port ? : range);
+			dst, proto, range, host, port ? : range, chain);
 	}
 	fclose(fp);
 	unlink("/tmp/vserver.log");
@@ -8850,6 +8988,8 @@ int is_wlif_up(const char *ifname)
 void write_encoded_crt(char *name, char *value){
 	int len, i, j;
 	char tmp[3500];
+
+	if (!value) return;
 
 	len = strlen(value);
 	// Safeguard against buffer overrun

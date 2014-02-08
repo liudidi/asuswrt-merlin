@@ -8,7 +8,7 @@
 <meta HTTP-EQUIV="Expires" CONTENT="-1">
 <link rel="shortcut icon" href="images/favicon.png">
 <link rel="icon" href="images/favicon.png">
-<title>ASUS Wireless Router <#Web_Title#> - System Information</title>
+<title><#Web_Title#> - System Information</title>
 <link rel="stylesheet" type="text/css" href="index_style.css">
 <link rel="stylesheet" type="text/css" href="form_style.css">
 <style>
@@ -90,8 +90,6 @@ function hwaccel_state(){
 			if ('<% nvram_get("cstats_enable"); %>' == '1') code += 'IPTraffic, ';
 			if ('<% nvram_get("qos_enable"); %>' == '1') code += 'QoS, ';
 			if ('<% nvram_get("sw_mode"); %>' == '2') code += 'Repeater mode, ';
-			if ('<% nvram_get("url_enable_x"); %>' == '1') code += 'URL filtering, ';
-			if ('<% nvram_get("keyword_enable_x"); %>' == '1') code += 'Keyword filtering, ';
 			if ('<% nvram_get("ctf_disable_modem"); %>' == '1') code += 'USB modem, ';
 
 			// We're disabled but we don't know why
@@ -215,7 +213,6 @@ function show_etherstate(){
 <form method="post" name="form" id="ruleForm" action="/start_apply.htm" target="hidden_frame">
 <input type="hidden" name="current_page" value="Tools_Sysinfo.asp">
 <input type="hidden" name="next_page" value="Tools_Sysinfo.asp">
-<input type="hidden" name="next_host" value="">
 <input type="hidden" name="modified" value="0">
 <input type="hidden" name="action_mode" value="apply">
 <input type="hidden" name="action_script" value="">
